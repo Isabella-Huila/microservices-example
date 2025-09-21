@@ -13,6 +13,11 @@ services:
   frontend:
     build:
       context: ./frontend # Ruta corregida según tu estructura de carpetas
+    environment:
+      - AUTH_API_URL=auth-api:8000
+      - TODOS_API_URL=todos-api:8082
+      - USERS_API_URL=users-api:8083
+      - ZIPKIN_URL=zipkin:9411
     ports:
       - "8080:80" # El Dockerfile de Nginx expone 80, no 8080.
     networks:
