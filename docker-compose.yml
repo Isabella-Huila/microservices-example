@@ -12,14 +12,14 @@ services:
 
   frontend:
     build:
-      context: ./frontend # Ruta corregida según tu estructura de carpetas
+      context: ./frontend 
     environment:
       - AUTH_API_URL=auth-api:8000
       - TODOS_API_URL=todos-api:8082
       - USERS_API_URL=users-api:8083
       - ZIPKIN_URL=zipkin:9411
     ports:
-      - "8080:80" # El Dockerfile de Nginx expone 80, no 8080.
+      - "8080:80"
     networks:
       - microservices
     depends_on:
@@ -38,7 +38,7 @@ services:
     networks:
       - microservices
     depends_on:
-      - redis # Aunque el Dockerfile de users-api no referencia Redis, tu compose sí. Lo mantengo.
+      - redis 
 
   auth-api:
     build:

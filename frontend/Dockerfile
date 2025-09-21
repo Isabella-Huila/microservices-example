@@ -19,4 +19,4 @@ COPY --from=build-stage /app/dist /usr/share/nginx/html
 RUN rm -f /etc/nginx/conf.d/default.conf
 
 # CMD que especifica EXACTAMENTE qué variables reemplazar
-CMD ["/bin/sh", "-c", "envsubst '${AUTH_API_URL} ${TODOS_API_URL} ${USERS_API_URL} ${ZIPKIN_URL}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
+CMD ["/bin/sh", "-c", "envsubst '${AUTH_API_URL} ${TODOS_API_URL} ${ZIPKIN_URL}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
