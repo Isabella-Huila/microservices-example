@@ -42,7 +42,7 @@ jobs:
             FULL_IMAGE_NAME=""
 
             # Determinar si el identificador es un tag o un digest
-            if [[ "$IMAGE_IDENTIFIER" == "sha256:" ]]; then
+            if [[ "$IMAGE_IDENTIFIER" == *"sha256:"* ]]; then
               echo "Deploying using image digest."
               # Formato para digest: REGISTRY/IMAGE@DIGEST
               FULL_IMAGE_NAME="${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.service_name }}@$IMAGE_IDENTIFIER"
