@@ -1,0 +1,64 @@
+# .github/workflows/redeploy-container-app.yml
+
+name: Redeploy Container App
+
+on:
+  workflow_dispatch:
+    inputs:
+      service_name:
+        description: 'Name of the service to redeploy'
+        required: true
+        type: choice
+        options:
+          - auth-api
+          - frontend
+          - log-message-processor
+          - todos-api
+          - users-api
+      image_identifier:
+        description: 'Image identifier (tag like "latest" OR digest like "sha256:...")'
+        required: true
+        default: 'latest'
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.CREDS }}
+          auth-type: SERVICE_PRINCIPAL
+
+      # --- PASO MODIFICADO ---
+      - name: Update and force redeploy Azure Container App
+        uses: azure/CLI@v1
+        with:
+          inlineScript: |
+            IMAGE_IDENTIFIER="${{ inputs.image_identifier }}"
+            FULL_IMAGE_NAME=""
+
+            # Determinar si el identificador es un tag o un digest
+            if [[ "$IMAGE_IDENTIFIER" == "sha256:" ]]; then
+              echo "Deploying using image digest."
+              # Formato para digest: REGISTRY/IMAGE@DIGEST
+              FULL_IMAGE_NAME="${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.service_name }}@$IMAGE_IDENTIFIER"
+            else
+              echo "Deploying using image tag."
+              # Formato para tag: REGISTRY/IMAGE:TAG
+              FULL_IMAGE_NAME="${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.service_name }}:$IMAGE_IDENTIFIER"
+            fi
+
+            echo "Forcing update for container app: ${{ inputs.service_name }}"
+            echo "Using full image name: $FULL_IMAGE_NAME"
+
+            az containerapp update \
+              --name ${{ inputs.service_name }} \
+              --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+              --image "$FULL_IMAGE_NAME" \
+              --set-env-vars "FORCE_UPDATE=${{ github.run_id }}"
+
+            echo "Update command sent for ${{ inputs.service_name }}."

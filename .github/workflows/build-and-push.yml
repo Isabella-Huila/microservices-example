@@ -147,9 +147,21 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image for ${{ matrix.service }}
+        id: build-and-push # <-- AÑADIR ESTA LÍNEA
         uses: docker/build-push-action@v5
         with:
           context: ./${{ matrix.service }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Trigger Redeployment
+        if: env.AUTO_DEPLOY == 'true'
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: redeploy-container-app.yml
+          token: ${{ secrets.PAT_TOKEN }}
+          # Pasamos el digest de la imagen como el identificador
+          inputs: '{ "service_name": "${{ matrix.service }}", "image_identifier": "${{ steps.build-and-push.outputs.digest }}" }'
+        env:
+          AUTO_DEPLOY: ${{ secrets.AUTO_DEPLOY }}
