@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7.0-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - microservices
+
+
+  frontend:
+    build:
+      context: ./frontend # Ruta corregida según tu estructura de carpetas
+    ports:
+      - "8080:80" # El Dockerfile de Nginx expone 80, no 8080.
+    networks:
+      - microservices
+    depends_on:
+      - auth-api
+      - todos-api
+
+  users-api:
+    build:
+      context: ./users-api
+    environment:
+      - JWT_SECRET=PRFT
+      - SERVER_PORT=8083
+      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+    ports:
+      - "8083:8083"
+    networks:
+      - microservices
+    depends_on:
+      - redis # Aunque el Dockerfile de users-api no referencia Redis, tu compose sí. Lo mantengo.
+
+  auth-api:
+    build:
+      context: ./auth-api
+    environment:
+      - JWT_SECRET=PRFT
+      - AUTH_API_PORT=8000
+      - USERS_API_ADDRESS=http://users-api:8083
+      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+    ports:
+      - "8000:8000"
+    networks:
+      - microservices
+    depends_on:
+      - users-api # Asegura que users-api esté arriba antes que auth-api
+
+  todos-api:
+    build:
+      context: ./todos-api
+    environment:
+      - JWT_SECRET=PRFT
+      - TODO_API_PORT=8082
+      - REDIS_HOST=redis # Apunta a la instancia principal de redis
+      - REDIS_PORT=6379
+      - REDIS_CHANNEL=log_channel
+      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+    ports:
+      - "8082:8082"
+    networks:
+      - microservices
+    depends_on:
+      - redis
+      - auth-api # Dependencia lógica si todos-api requiere autenticación
+
+  log-message-processor:
+    build:
+      context: ./log-message-processor
+    environment:
+      - REDIS_HOST=redis # Apunta a la instancia principal de redis
+      - REDIS_PORT=6379
+      - REDIS_CHANNEL=log_channel
+      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+    networks:
+      - microservices
+    depends_on:
+      - redis
+
+
+  zipkin:
+    image: openzipkin/zipkin
+    container_name: zipkin
+    ports:
+      - "9411:9411"
+    networks:
+      - microservices
+
+networks:
+  microservices:
+    driver: bridge  

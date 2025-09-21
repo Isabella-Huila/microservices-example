@@ -1,0 +1,155 @@
+# .github/workflows/build-and-push.yml
+
+name: Build and Push Microservices to ACR
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      build_all:
+        description: 'Build all services?'
+        type: boolean
+        default: false
+      build_auth-api:
+        description: 'Build auth-api?'
+        type: boolean
+        default: false
+      build_frontend:
+        description: 'Build frontend?'
+        type: boolean
+        default: false
+      build_log-message-processor:
+        description: 'Build log-message-processor?'
+        type: boolean
+        default: false
+      build_todos-api:
+        description: 'Build todos-api?'
+        type: boolean
+        default: false
+      build_users-api:
+        description: 'Build users-api?'
+        type: boolean
+        default: false
+
+env:
+  SERVICES: "auth-api frontend log-message-processor todos-api users-api"
+
+jobs:
+  # TRABAJO 1: Detectar los servicios que necesitan ser construidos
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      services_matrix: ${{ steps.set-matrix.outputs.services_matrix }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed folders (on push)
+        if: github.event_name == 'push'
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            auth-api:
+              - 'auth-api/**'
+            frontend:
+              - 'frontend/**'
+            log-message-processor:
+              - 'log-message-processor/**'
+            todos-api:
+              - 'todos-api/**'
+            users-api:
+              - 'users-api/**'
+
+      - name: Set build matrix
+        id: set-matrix
+        env:
+          # Pasamos las salidas del filtro y las entradas manuales como cadenas JSON
+          FILTER_OUTPUTS: ${{ toJSON(steps.filter.outputs) }}
+          MANUAL_INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          services_to_build="[]"
+
+          # --- Lógica para el evento PUSH (CORREGIDA) ---
+          if [ "${{ github.event_name }}" == "push" ]; then
+            echo "Push event detected. Checking changed paths..."
+            echo "Filter outputs: $FILTER_OUTPUTS"
+            
+            for service in ${{ env.SERVICES }}; do
+              # Usamos jq para consultar dinámicamente el JSON usando la variable 'service' del bucle
+              has_changed=$(echo "$FILTER_OUTPUTS" | jq -r --arg s "$service" '.[$s]')
+              
+              if [ "$has_changed" == "true" ]; then
+                services_to_build=$(echo "$services_to_build" | jq --arg s "$service" '. + [$s]')
+                echo "-> Change detected in '$service'. Added to build matrix."
+              fi
+            done
+          fi
+
+          # --- Lógica para el evento WORKFLOW_DISPATCH (MEJORADA) ---
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "Manual workflow dispatch detected. Checking user inputs..."
+            echo "Manual inputs: $MANUAL_INPUTS"
+
+            if [ $(echo "$MANUAL_INPUTS" | jq '.build_all') == "true" ]; then
+              services_to_build=$(echo '${{ env.SERVICES }}' | jq -R 'split(" ") | .')
+              echo "-> 'Build all' selected. Building all services."
+            else
+              for service in ${{ env.SERVICES }}; do
+                input_key="build_${service}"
+                is_selected=$(echo "$MANUAL_INPUTS" | jq -r --arg k "$input_key" '.[$k]')
+                
+                if [ "$is_selected" == "true" ]; then
+                  services_to_build=$(echo "$services_to_build" | jq --arg s "$service" '. + [$s]')
+                  echo "-> '$service' was selected. Added to build matrix."
+                fi
+              done
+            fi
+          fi
+          
+          echo "Final matrix: $services_to_build"
+          echo "services_matrix=$(echo $services_to_build | jq -c .)" >> $GITHUB_OUTPUT
+
+  # TRABAJO 2: Construir y subir las imágenes de los servicios detectados
+  build-and-push:
+    needs: detect-changes
+    if: fromJson(needs.detect-changes.outputs.services_matrix)[0] != null
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.detect-changes.outputs.services_matrix) }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Azure Container Registry
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image for ${{ matrix.service }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.service }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
